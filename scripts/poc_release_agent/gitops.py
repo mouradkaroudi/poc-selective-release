@@ -155,30 +155,50 @@ class GitRepo:
             raise SafetyError(f"Refusing to check out production branch {ref!r}.")
         self.run(["checkout", "--detach", ref] if ref == "HEAD" else ["checkout", ref])
 
-    def checkout_release_from_main(self, release_ref: str, main_ref: str) -> None:
-        """Create *release_ref* from *main_ref* and check it out."""
+    def checkout_release_from_main(self, release_ref: str, main_ref: str) -> bool:
+        """Create *release_ref* from *main_ref*, or reuse it if already pushed.
+
+        Returns:
+            True if a new branch was created from main and still needs cherry-pick.
+            False if an existing main-based release branch was checked out.
+        """
         short_release = assert_release_branch(release_ref)
         short_main = assert_allowed_lineage_ref(main_ref, "main")
         main_resolved = self.resolve(main_ref)
-        if self.ref_exists(short_release) or self.ref_exists(f"origin/{short_release}"):
-            raise SafetyError(
-                f"Release branch {short_release!r} already exists. The agent "
-                "will not overwrite it."
-            )
+        main_sha = self.rev_parse(main_resolved)
+        remote = f"origin/{short_release}"
+        if self.ref_exists(short_release) or self.ref_exists(remote):
+            if self.ref_exists(short_release):
+                self.run(["checkout", short_release])
+            else:
+                self.run(["checkout", "-b", short_release, remote])
+            head = self.rev_parse("HEAD")
+            if not self.is_ancestor(main_sha, head):
+                raise SafetyError(
+                    f"Existing release branch {short_release!r} is not based on "
+                    f"{short_main}. The agent will not use it."
+                )
+            if self._head_is_test_tip():
+                raise SafetyError("Release branch must not start at test.")
+            return False
         self.run(["checkout", "-b", short_release, main_resolved])
         head = self.rev_parse("HEAD")
-        main_sha = self.rev_parse(main_resolved)
         if head != main_sha:
             raise SafetyError(
                 f"Release branch {short_release} was not created from {short_main}."
             )
-        test_ref = None
-        for candidate in ("poc/demo/test", "origin/poc/demo/test"):
-            if self.ref_exists(candidate):
-                test_ref = candidate
-                break
-        if test_ref is not None and head == self.rev_parse(test_ref):
+        if self._head_is_test_tip():
             raise SafetyError("Release branch must not start at test.")
+        return True
+
+    def _head_is_test_tip(self) -> bool:
+        """Return True if HEAD is the test branch tip."""
+        for candidate in ("poc/demo/test", "origin/poc/demo/test"):
+            if self.ref_exists(candidate) and self.rev_parse("HEAD") == self.rev_parse(
+                candidate
+            ):
+                return True
+        return False
 
     def cherry_pick(self, shas: list[str]) -> None:
         """Apply original feature commits onto the current release branch."""

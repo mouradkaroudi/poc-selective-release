@@ -215,11 +215,15 @@ class GitHubPR:
                     *self._repo_args(),
                     "--title",
                     title,
-                    "--body",
-                    body,
-                ]
+                    "--body-file",
+                    "-",
+                ],
+                input_text=body,
             )
-            self.add_labels(int(existing["number"]), labels)
+            try:
+                self.add_labels(int(existing["number"]), labels)
+            except SafetyError:
+                pass
             viewed = self.get_pr(int(existing["number"]))
             return viewed
         self.ensure_labels(labels)
@@ -233,16 +237,16 @@ class GitHubPR:
             head,
             "--title",
             title,
-            "--body",
-            body,
+            "--body-file",
+            "-",
         ]
         labeled_args = list(args)
         for label in labels:
             labeled_args.extend(["--label", label])
         try:
-            url = self._run(labeled_args)
+            url = self._run(labeled_args, input_text=body)
         except SafetyError:
-            url = self._run(args)
+            url = self._run(args, input_text=body)
         listed = self.find_pr(head=head, base=base)
         if listed:
             return {"url": url or listed.get("url"), **listed}

@@ -404,9 +404,10 @@ def prepare_release(
     created = False
     applied = False
     try:
-        repo.checkout_release_from_main(release_ref, main_ref)
+        created_new = repo.checkout_release_from_main(release_ref, main_ref)
         created = True
-        repo.cherry_pick(analysis.unique_commits)
+        if created_new:
+            repo.cherry_pick(analysis.unique_commits)
         analysis.validation = validate_release(
             repo, analysis, main_ref=main_ref, test_ref=test_ref
         )
@@ -468,6 +469,11 @@ def prepare_release(
                     pass
             return analysis
         analysis.validation["GitHub"] = f"FAIL {exc}"
+        if github and request_pr is not None:
+            try:
+                github.comment(request_pr, render_report(analysis))
+            except SafetyError:
+                pass
         return analysis
     except Exception:
         if created and not applied:

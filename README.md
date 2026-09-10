@@ -29,4 +29,12 @@ python scripts/poc_release_agent/selftest.py
 4. It opens a second PR: `poc/demo/release/feature-b` -> `poc/demo/main`.
 5. Do not merge the request PR. Review the candidate PR. The agent stops there.
 
+Repo setting required once:
+
+Settings -> Actions -> General -> Workflow permissions -> enable
+"Allow GitHub Actions to create and approve pull requests".
+
+GitHub bundles create+approve in that checkbox. The agent still never
+approves or merges.
+
 See `docs/poc-ai-release-workflow.md` and `.github/skills/release-agent/SKILL.md`.

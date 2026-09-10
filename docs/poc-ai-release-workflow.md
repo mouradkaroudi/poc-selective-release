@@ -102,9 +102,14 @@ exception. `GITHUB_TOKEN` technically can merge if branch protection is
 off; the agent and workflow never call merge, never approve, and never
 force-push.
 
-The job runs on `ubuntu-latest`, not the production self-hosted deploy
-runner. Untrusted PR code is not executed: scripts are checked out from
-the trusted base/`workflow_dispatch` ref. Fork PRs are ignored.
+The job runs on `ubuntu-latest`. Untrusted PR code is not executed: scripts
+are checked out from the trusted base/`workflow_dispatch` ref. Fork PRs are
+ignored.
+
+GitHub default: Actions may not create pull requests. Enable
+Settings -> Actions -> General -> Workflow permissions ->
+"Allow GitHub Actions to create and approve pull requests".
+The agent still never calls approve or merge.
 
 ## How merge is prevented
 
