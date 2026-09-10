@@ -1,0 +1,92 @@
+# PoC only. Isolated from production deploy-aci-srv.yml.
+# Triggers only for namespaced demo PRs or a manual dispatch.
+# Never grants base-branch secrets to fork pull requests. Never merges.
+
+name: PoC Release Agent
+
+on:
+  pull_request:
+    types: [opened, edited, labeled, synchronize, reopened]
+    branches:
+      - "poc/demo/main"
+  workflow_dispatch:
+    inputs:
+      request_pr:
+        description: Number of the release-request pull request
+        required: true
+        type: string
+
+concurrency:
+  group: poc-release-agent-${{ github.event.pull_request.number || inputs.request_pr }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-agent:
+    name: Analyze and prepare isolated release
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        contains(github.event.pull_request.labels.*.name, 'release-request') &&
+        !startsWith(github.event.pull_request.head.ref, 'poc/demo/release/')
+      )
+    steps:
+      - name: Check out trusted workflow code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || github.event.pull_request.base.ref }}
+
+      - name: Fetch PoC demo refs
+        run: |
+          set -euo pipefail
+          git fetch origin --prune '+refs/heads/poc/demo/*:refs/remotes/origin/poc/demo/*'
+
+      - name: Configure git identity for cherry-pick
+        run: |
+          set -euo pipefail
+          git config user.name "poc-release-agent"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Resolve request PR number
+        id: pr
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "number=${{ inputs.request_pr }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run release agent
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python scripts/poc_release_agent/agent.py \
+            --request-pr "${{ steps.pr.outputs.number }}" \
+            --github \
+            --push \
+            prepare
+
+      - name: Stop without merging
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "PoC release agent finished."
+          echo "This workflow does not merge pull requests."
+          echo "This workflow does not approve pull requests."
+          echo "Human review of the candidate PR is required."
